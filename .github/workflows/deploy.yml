@@ -26,7 +26,7 @@ jobs:
     outputs:
       public: ${{ steps.visibility.outputs.public }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # GitHub Pages is public-repos-only on GitHub Free, so the deploy job is
       # gated on this. Read at runtime because the `schedule` event payload does
@@ -49,15 +49,19 @@ jobs:
       # restore this and skip the Go toolchain entirely.
       - name: Restore cached binary
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: awsworkshops
           key: binary-${{ runner.os }}-${{ hashFiles('main.go', 'go.mod') }}
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         if: steps.cache.outputs.cache-hit != 'true'
         with:
           go-version: '1.22'
+          # No third-party dependencies, so there is no go.sum to key a module
+          # cache on. Leaving this on just emits a "dependencies file not found"
+          # warning on every run.
+          cache: false
 
       - name: Compile
         if: steps.cache.outputs.cache-hit != 'true'
@@ -99,7 +103,7 @@ jobs:
       # Plain copy, downloadable from the run page. This is how you inspect the
       # result while the repo is still private.
       - name: Upload page for inspection
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: page
           path: _site/index.html
@@ -107,7 +111,7 @@ jobs:
 
       - name: Upload Pages artifact
         if: steps.visibility.outputs.public == 'true'
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: _site
 
@@ -121,4 +125,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
