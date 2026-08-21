@@ -1,0 +1,30 @@
+# Compiled binary. CI rebuilds it from main.go, so it is never committed.
+/awsworkshops
+/awsworkshops.exe
+/awsworkshops-mac
+*.exe
+*.test
+*.out
+
+# Generated output. The workflow produces these on every run; committing them
+# would mean a ~250 KB diff four times a day for data that is already stale.
+/_site/
+/dist/
+/data.json
+/workshops.json
+
+# Local run logs
+*.log
+
+# Go tooling
+/vendor/
+go.work
+go.work.sum
+
+# Editors and OS cruft
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db

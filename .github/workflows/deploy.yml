@@ -1,0 +1,124 @@
+name: Harvest & Deploy
+
+on:
+  schedule:
+    # Four times a day. The listing only changes when AWS publishes new events,
+    # so a tighter interval would spend Actions minutes for nothing.
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two runs race to publish. A queued run waits; an in-flight one is
+# cancelled, because a half-finished deploy is worth less than the next harvest.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      public: ${{ steps.visibility.outputs.public }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # GitHub Pages is public-repos-only on GitHub Free, so the deploy job is
+      # gated on this. Read at runtime because the `schedule` event payload does
+      # not carry repository visibility.
+      - name: Check repository visibility
+        id: visibility
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          private=$(gh api "repos/${GITHUB_REPOSITORY}" --jq .private)
+          echo "private=${private}"
+          if [ "${private}" = "false" ]; then
+            echo "public=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "public=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Repository is private, so GitHub Pages deployment is skipped. The page was still built and is attached to this run as an artifact." 
+          fi
+
+      # Only rebuild when the source actually changed. The four daily cron runs
+      # restore this and skip the Go toolchain entirely.
+      - name: Restore cached binary
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: awsworkshops
+          key: binary-${{ runner.os }}-${{ hashFiles('main.go', 'go.mod') }}
+
+      - uses: actions/setup-go@v5
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          go-version: '1.22'
+
+      - name: Compile
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          go vet ./...
+          go build -trimpath -ldflags="-s -w" -o awsworkshops main.go
+
+      - name: Harvest and render
+        run: |
+          chmod +x awsworkshops
+          mkdir -p _site
+          ./awsworkshops -static _site/index.html
+
+      # Fail loudly rather than publishing an empty or half-substituted page.
+      - name: Verify output
+        run: |
+          page=_site/index.html
+          test -s "$page" || { echo "::error::$page is missing or empty"; exit 1; }
+
+          left=$(grep -o '__[A-Z_]\+__' "$page" | sort -u || true)
+          if [ -n "$left" ]; then
+            echo "::error::unsubstituted placeholders remain: $left"; exit 1
+          fi
+
+          count=$(grep -o '<strong>[0-9]\+ workshops</strong>' "$page" | grep -o '[0-9]\+' || echo 0)
+          if [ "${count:-0}" -lt 1 ]; then
+            echo "::error::page reports $count workshops, refusing to publish"; exit 1
+          fi
+
+          bytes=$(wc -c < "$page")
+          echo "### Harvest result" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| | |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Workshops | $count |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Page size | $bytes bytes |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Deploy | ${{ steps.visibility.outputs.public == 'true' && 'yes, repo is public' || 'skipped, repo is private' }} |" >> "$GITHUB_STEP_SUMMARY"
+
+      # Plain copy, downloadable from the run page. This is how you inspect the
+      # result while the repo is still private.
+      - name: Upload page for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: page
+          path: _site/index.html
+          retention-days: 7
+
+      - name: Upload Pages artifact
+        if: steps.visibility.outputs.public == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.public == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
