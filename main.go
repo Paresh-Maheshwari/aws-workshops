@@ -436,6 +436,83 @@ func renderPage(list []Workshop, built time.Time, static bool) string {
 	).Replace(pageHTML)
 }
 
+// renderRSS generates an RSS 2.0 feed with the most recent workshops.
+// Limit to 50 items to keep the feed size reasonable.
+func renderRSS(list []Workshop, built time.Time) string {
+	const siteURL = "https://paresh-maheshwari.github.io/aws-workshops/"
+	const feedURL = "https://paresh-maheshwari.github.io/aws-workshops/feed.xml"
+
+	var b strings.Builder
+	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+<channel>
+  <title>AWS Online Hands-on Workshops</title>
+  <link>` + siteURL + `</link>
+  <description>Upcoming virtual hands-on workshops from AWS Experience portals across AMER, EMEA, APJ, and LATAM.</description>
+  <language>en</language>
+  <lastBuildDate>` + built.UTC().Format(time.RFC1123Z) + `</lastBuildDate>
+  <atom:link href="` + feedURL + `" rel="self" type="application/rss+xml"/>
+`)
+
+	// Limit to 50 items
+	n := len(list)
+	if n > 50 {
+		n = 50
+	}
+
+	for i := 0; i < n; i++ {
+		w := list[i]
+		start, _ := time.Parse(time.RFC3339, w.Start)
+		dateStr := start.In(ist).Format("Mon, 2 Jan 2006 15:04 MST")
+
+		desc := w.Summary
+		if desc == "" {
+			desc = w.Title
+		}
+		// Build a richer description
+		details := []string{}
+		if w.Region != "" {
+			details = append(details, "Region: "+w.Region)
+		}
+		if w.Dur != "" {
+			details = append(details, "Duration: "+w.Dur)
+		}
+		if w.Platform != "" {
+			details = append(details, "Platform: "+w.Platform)
+		}
+		if w.Speakers != "" {
+			details = append(details, "Speakers: "+w.Speakers)
+		}
+		if len(details) > 0 {
+			desc = desc + "\n\n" + strings.Join(details, " | ")
+		}
+
+		b.WriteString("  <item>\n")
+		b.WriteString("    <title>" + xmlEsc(w.Title) + " — " + dateStr + "</title>\n")
+		b.WriteString("    <link>" + xmlEsc(w.URL) + "</link>\n")
+		b.WriteString("    <guid isPermaLink=\"false\">" + xmlEsc(w.ID) + "</guid>\n")
+		b.WriteString("    <pubDate>" + start.UTC().Format(time.RFC1123Z) + "</pubDate>\n")
+		b.WriteString("    <description>" + xmlEsc(desc) + "</description>\n")
+		if w.Region != "" {
+			b.WriteString("    <category>" + xmlEsc(w.Region) + "</category>\n")
+		}
+		b.WriteString("  </item>\n")
+	}
+
+	b.WriteString("</channel>\n</rss>\n")
+	return b.String()
+}
+
+// xmlEsc escapes special XML characters.
+func xmlEsc(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	s = strings.ReplaceAll(s, "\"", "&quot;")
+	s = strings.ReplaceAll(s, "'", "&#39;")
+	return s
+}
+
 func clip(s string, n int) string {
 	r := []rune(s)
 	if len(r) <= n {
@@ -467,6 +544,8 @@ EXAMPLES
   awsworkshops -dump out.json        write JSON and exit, no server
   awsworkshops -static _site/index.html
                                      write a self-contained page and exit
+  awsworkshops -static _site/index.html -rss _site/feed.xml
+                                     write the page and RSS feed together
   awsworkshops -addr 0.0.0.0         expose on the network (SEE SECURITY)
 
 FLAGS
@@ -477,6 +556,7 @@ FLAGS
   -dump file        write harvested JSON to file and exit
   -static file      write the rendered page to file and exit. Server-only
                     controls (Refresh, JSON, /healthz, /refresh) are omitted
+  -rss file         write RSS feed to file (use with -static for GitHub Pages)
   -version          print version and exit
   -h, -help         show this help
 
@@ -504,6 +584,7 @@ func main() {
 	open := flag.Bool("open", false, "open the page in your browser once ready")
 	dump := flag.String("dump", "", "write the harvested JSON to this file and exit (no server)")
 	static := flag.String("static", "", "write the fully rendered HTML page to this file and exit (for GitHub Pages)")
+	rss := flag.String("rss", "", "write an RSS feed to this file (use with -static for GitHub Pages)")
 	showVer := flag.Bool("version", false, "print version and exit")
 
 	flag.Usage = func() { fmt.Fprint(os.Stderr, helpText) }
@@ -543,6 +624,14 @@ func main() {
 			log.Fatalf("static: %v", err)
 		}
 		log.Printf("wrote %s (%d workshops, %d bytes)", *static, len(ws), len(page))
+
+		if *rss != "" {
+			feed := renderRSS(ws, time.Now())
+			if err := os.WriteFile(*rss, []byte(feed), 0o644); err != nil {
+				log.Fatalf("rss: %v", err)
+			}
+			log.Printf("wrote %s (%d items)", *rss, min(len(ws), 50))
+		}
 		return
 	}
 
@@ -694,6 +783,7 @@ const pageHTML = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Online Hands-on Workshops</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%23f5efe4'/%3E%3Ctext x='16' y='23' font-family='Georgia,serif' font-size='20' font-weight='600' text-anchor='middle' fill='%23a03c1e'%3EW%3C/text%3E%3C/svg%3E">
+<link rel="alternate" type="application/rss+xml" title="AWS Online Hands-on Workshops" href="feed.xml">
 <script>
 (function(){var t=null;try{t=localStorage.getItem('reg-theme');}catch(e){}
 var r=document.documentElement;r.setAttribute('data-theme',t||'auto');
@@ -939,6 +1029,11 @@ footer.foot{border-top:2px solid var(--ink);margin-top:var(--space-xl);
         <span class="upd" id="updated" data-built="__BUILT_ISO__">updated __BUILT__</span>
         __REFRESHBTN__
         __JSONLINK__
+        <a class="mastlink" href="feed.xml" target="_blank" rel="noopener" title="RSS Feed">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg> RSS</a>
+        <span style="color:var(--rule-strong);margin:0 4px;">|</span>
+        <a class="mastlink" href="https://github.com/Paresh-Maheshwari/aws-workshops" target="_blank" rel="noopener" title="Star on GitHub">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-3px;margin-right:2px;"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg> GitHub</a>
         <div class="themeswitch" role="group" aria-label="Colour theme">
           <button type="button" data-theme-set="auto" aria-pressed="true">Auto</button>
           <button type="button" data-theme-set="light" aria-pressed="false">Light</button>

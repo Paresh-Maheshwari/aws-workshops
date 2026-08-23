@@ -73,7 +73,7 @@ jobs:
         run: |
           chmod +x awsworkshops
           mkdir -p _site
-          ./awsworkshops -static _site/index.html
+          ./awsworkshops -static _site/index.html -rss _site/feed.xml
 
       # Fail loudly rather than publishing an empty or half-substituted page.
       - name: Verify output
