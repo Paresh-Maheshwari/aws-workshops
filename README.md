@@ -1,5 +1,9 @@
 # aws-workshops
 
+[![Harvest & Deploy](https://github.com/Paresh-Maheshwari/aws-workshops/actions/workflows/deploy.yml/badge.svg)](https://github.com/Paresh-Maheshwari/aws-workshops/actions/workflows/deploy.yml)
+[![GitHub Pages](https://img.shields.io/badge/demo-live-brightgreen)](https://paresh-maheshwari.github.io/aws-workshops/)
+[![RSS Feed](https://img.shields.io/badge/RSS-feed-orange)](https://paresh-maheshwari.github.io/aws-workshops/feed.xml)
+
 Every **online, hands-on AWS workshop** that is still open to register for, on one
 page, in your own timezone.
 
