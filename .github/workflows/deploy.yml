@@ -4,7 +4,7 @@ on:
   schedule:
     # Four times a day. The listing only changes when AWS publishes new events,
     # so a tighter interval would spend Actions minutes for nothing.
-    - cron: '0 */6 * * *'
+    - cron: '0 0 * * *'
   workflow_dispatch:
   push:
     branches: [main]
